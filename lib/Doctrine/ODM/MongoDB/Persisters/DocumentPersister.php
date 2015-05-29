@@ -1234,7 +1234,7 @@ class DocumentPersister
         $fieldName = $fieldMapping['fieldName'];
 
         if ($isUpdate && isset($dcs[$fieldName]) && $dcs[$fieldName][0] != $dcs[$fieldName][1]) {
-            throw MongoDBException::shardKeyFieldCannotBeChanged($shardKeyField, $this->class->getName());
+            throw MongoDBException::shardKeyFieldCannotBeChanged($shardKeyField, $this->class->getName(), $dcs);
         }
 
         if (!isset($actualDocumentData[$fieldName])) {

@@ -75,9 +75,9 @@ class MongoDBException extends \Exception
         ));
     }
 
-    public static function shardKeyFieldCannotBeChanged($field, $className)
+    public static function shardKeyFieldCannotBeChanged($field, $className, $changeSet)
     {
-        return new self(sprintf('Shard key field "%s" cannot be changed. Class: %s', $field, $className));
+        return new self(sprintf('Shard key field "%s" cannot be changed. Class: %s, Data Change Set: %s', $field, $className, json_encode($changeSet)));
     }
 
     public static function shardKeyFieldMissing($field, $className)
