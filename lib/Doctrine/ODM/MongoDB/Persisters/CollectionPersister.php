@@ -21,8 +21,10 @@ namespace Doctrine\ODM\MongoDB\Persisters;
 
 use Doctrine\ODM\MongoDB\DocumentManager;
 use Doctrine\ODM\MongoDB\Mapping\ClassMetadata;
+use Doctrine\ODM\MongoDB\MongoDBException;
 use Doctrine\ODM\MongoDB\PersistentCollection;
 use Doctrine\ODM\MongoDB\Persisters\PersistenceBuilder;
+use Doctrine\ODM\MongoDB\Types\Type;
 use Doctrine\ODM\MongoDB\UnitOfWork;
 
 /**
@@ -278,15 +280,87 @@ class CollectionPersister
      * Executes a query updating the given document.
      *
      * @param object $document
-     * @param array $query
-     * @param array $options
+     * @param array  $query
+     * @param array  $options
      */
     private function executeQuery($document, array $query, array $options)
     {
-        $className = get_class($document);
-        $class = $this->dm->getClassMetadata($className);
-        $id = $class->getDatabaseIdentifierValue($this->uow->getDocumentIdentifier($document));
+        $className  = get_class($document);
+        $class      = $this->dm->getClassMetadata($className);
+        $findQuery  = $this->getQueryForDocument($class, $document);
         $collection = $this->dm->getDocumentCollection($className);
-        $collection->update(array('_id' => $id), $query, $options);
+        $collection->update($findQuery, $query, $options);
+    }
+
+    /**
+     * @param ClassMetadata $class
+     * @param  object             $document
+     *
+     * @return array
+     */
+    private function getQueryForDocument($class, $document)
+    {
+        $id = $class->getDatabaseIdentifierValue($this->uow->getDocumentIdentifier($document));
+
+        $shardKeyQueryPart = $this->getShardKeyQuery($class, $document);
+        $query             = array_merge(array('_id' => $id), $shardKeyQueryPart);
+
+        return $query;
+    }
+
+    /**
+     * @param object        $document
+     * @param ClassMetadata $class
+     *
+     * @return array
+     * @throws MongoDBException
+     */
+    public function getShardKeyQuery($class, $document)
+    {
+        if (!$class->isSharded()) {
+            return array();
+        }
+
+        $shardKey = $class->getShardKey();
+        $keys     = array_keys($shardKey['keys']);
+        $data     = $this->uow->getDocumentActualData($document);
+
+        $shardKeyQueryPart = array();
+        foreach ($keys as $key) {
+            $mapping = $class->getFieldMappingByDbFieldName($key);
+            $this->guardMissingShardKey($class, $document, $key, $data);
+            $value                   = Type::getType($mapping['type'])->convertToDatabaseValue($data[$mapping['fieldName']]);
+            $shardKeyQueryPart[$key] = $value;
+        }
+
+        return $shardKeyQueryPart;
+    }
+
+    /**
+     * If the document is new, ignore shard key field value, otherwise throw an exception.
+     * Also, shard key field should be presented in actual document data.
+     *
+     * @param ClassMetadata $class
+     * @param object        $document
+     * @param string        $shardKeyField
+     * @param array         $actualDocumentData
+     *
+     * @throws MongoDBException
+     */
+    private function guardMissingShardKey($class, $document, $shardKeyField, $actualDocumentData)
+    {
+        $dcs      = $this->uow->getDocumentChangeSet($document);
+        $isUpdate = $this->uow->isScheduledForUpdate($document);
+
+        $fieldMapping = $class->getFieldMappingByDbFieldName($shardKeyField);
+        $fieldName    = $fieldMapping['fieldName'];
+
+        if ($isUpdate && isset($dcs[$fieldName]) && $dcs[$fieldName][0] != $dcs[$fieldName][1]) {
+            throw MongoDBException::shardKeyFieldCannotBeChanged($shardKeyField, $class->getName());
+        }
+
+        if (!isset($actualDocumentData[$fieldName])) {
+            throw MongoDBException::shardKeyFieldMissing($shardKeyField, $class->getName());
+        }
     }
 }
