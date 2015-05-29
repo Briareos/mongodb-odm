@@ -355,7 +355,7 @@ class CollectionPersister
         $fieldMapping = $class->getFieldMappingByDbFieldName($shardKeyField);
         $fieldName    = $fieldMapping['fieldName'];
 
-        if ($isUpdate && isset($dcs[$fieldName]) && $dcs[$fieldName][0] != $dcs[$fieldName][1]) {
+        if ($isUpdate && isset($dcs[$fieldName]) && isset($dcs[$fieldName][0]) && $dcs[$fieldName][0] != $dcs[$fieldName][1]) {
             throw MongoDBException::shardKeyFieldCannotBeChanged($shardKeyField, $class->getName(), $dcs);
         }
 
